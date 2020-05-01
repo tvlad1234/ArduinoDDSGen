@@ -7,13 +7,16 @@
 #define SS 10
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
-#define OLED_RESET  4
-#define SET 2
-#define down 6
-#define up 7
-#define selw 3
+#define OLED_RESET  -1
+#define SET 4 //2
+#define down 2 //6
+#define up 3 //7
+#define selw 5 //3
+#define dutyup 7
+#define dutydown 6
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-int FREQ=100;
+unsigned int FREQ=100;
+float dutycycle=50;
 unsigned int i=0;              // counter
 unsigned int waveform = 0; //sine=0, tr=1, rampU=2, rampD=3, sq=4
 
@@ -145,6 +148,12 @@ void atint(unsigned int i){
     Timer1.attachInterrupt(sawwave2);
   else if(i==4)
     Timer1.attachInterrupt(noise);
+  else if(i==5)
+  {
+    Timer1.setPeriod(1/(0.000001*FREQ));
+    Timer1.pwm(9,(dutycycle/100)*1023);
+  }
+    
 }
 
 
@@ -153,7 +162,7 @@ void showInfo(){
   display.clearDisplay();
     display.setCursor(0,0);
     display.print(FREQ);
-    display.println(" Hz");
+    display.println("Hz");
     if(waveform==0)
       display.print("Sine");
     else if(waveform==1)
@@ -168,6 +177,13 @@ void showInfo(){
     display.setCursor(0,0);
     display.print("Noise");
     }
+     else if(waveform==5)
+     {
+       display.print("Square");
+       display.setCursor(70,0);
+       display.print((int)dutycycle);
+       display.print('%');
+     }
       
     display.display();
     delay(50);
@@ -182,9 +198,11 @@ void setup(){
    display.setTextSize(2);
    showInfo();
   pinMode(up, INPUT_PULLUP);
- pinMode(down,INPUT_PULLUP);
+  pinMode(down,INPUT_PULLUP);
   pinMode(SET, INPUT_PULLUP);
   pinMode(selw, INPUT_PULLUP);
+  pinMode(dutyup, INPUT_PULLUP);
+  pinMode(dutydown, INPUT_PULLUP);
   pinMode(SS, OUTPUT);
   SPI.begin();
   
@@ -204,18 +222,18 @@ void loop(){
   if(!digitalRead(up) && FREQ<170)
   {
     //Timer1.detachInterrupt();
-    FREQ+=10;
+    FREQ+=5;
     showInfo();
     Timer1.setPeriod(1/(0.000256*FREQ));
     delay(150);
     //Timer1.attachInterrupt(wave);
   }
 
-  if(!digitalRead(down) && FREQ>10)
+  if(!digitalRead(down) && FREQ>5)
   {
     //Timer1.detachInterrupt();
     
-    FREQ-=10;
+    FREQ-=5;
     showInfo();
     Timer1.setPeriod(1/(0.000256*FREQ));
     delay(150);
@@ -224,11 +242,29 @@ void loop(){
 
   if(!digitalRead(selw)){
     waveform++;
-    if(waveform > 4)
+    if(waveform > 5)
+    {
+      Timer1.setPeriod(1/(0.000256*FREQ));
       waveform=0;
+    }
+      
     showInfo();
     delay(150);
   }
+
+  if(!digitalRead(dutydown) && dutycycle>0)
+  {
+    dutycycle-=10;
+    showInfo();
+    delay(150);
+  }
+   if(!digitalRead(dutyup) && dutycycle<100)
+  {
+    dutycycle+=10;
+    showInfo();
+    delay(150);
+  }
+  
   atint(waveform);
   //Timer1.attachInterrupt(wave);
   }
