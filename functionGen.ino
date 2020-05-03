@@ -1,3 +1,6 @@
+//Arduino Function Generator
+//Vlad Tomoiaga
+
 #include <EEPROM.h>
 #include <TimerOne.h>
 #include <SPI.h>
