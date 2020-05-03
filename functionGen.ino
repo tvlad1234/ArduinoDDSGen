@@ -1,9 +1,13 @@
+#include <EEPROM.h>
 #include <TimerOne.h>
 #include <SPI.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 //#define FREQ 100
+#define waveAd 0
+#define freqAd 1
+#define dutyAd 3
 #define SS 10
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
@@ -15,10 +19,10 @@
 #define dutyup 7
 #define dutydown 6
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-unsigned int FREQ=100;
-float dutycycle=50;
-unsigned int i=0;              // counter
-unsigned int waveform = 0; //sine=0, tr=1, rampU=2, rampD=3, sq=4
+unsigned int FREQ;
+float dutycycle;
+byte i=0;              // counter
+byte waveform; //sine=0, tr=1, rampU=2, rampD=3, sq=4
 
 const byte sine[256] ={
 128,131,134,137,140,143,146,149,
@@ -94,47 +98,40 @@ const byte tr[256] ={
 
 
 void sinewave(){
+
   
-  digitalWrite(SS, LOW);
   SPI.transfer(sine[i]);
-  digitalWrite(SS, HIGH);
-  if(i<255)
-    i++;
-  else i=0;
+  PORTB |= 1UL << 2; //ss high
+  PORTB &= ~(1UL << 2); //ss low
+  i++;
 }
 
 void triwave(){
   
-  digitalWrite(SS, LOW);
   SPI.transfer(tr[i]);
-  digitalWrite(SS, HIGH);
-  if(i<255)
-    i++;
-  else i=0;
+  PORTB |= 1UL << 2; //ss high
+  PORTB &= ~(1UL << 2); //ss low
+  i++;
 }
 
 void sawwave1(){
-  digitalWrite(SS, LOW);
   SPI.transfer(i);
-  digitalWrite(SS, HIGH);
-  if(i<255)
-    i++;
-  else i=0;
+  PORTB |= 1UL << 2; //ss high
+  PORTB &= ~(1UL << 2); //ss low
+  i++;
 }
 
 void sawwave2(){
-  digitalWrite(SS, LOW);
   SPI.transfer(i);
-  digitalWrite(SS, HIGH);
-  if(i>1)
-    i--;
-  else i=255;
+  PORTB |= 1UL << 2; //ss high
+  PORTB &= ~(1UL << 2); //ss low
+  i--;
 }
 
 void noise(){
-   digitalWrite(SS, LOW);
   SPI.transfer(random(0,255));
-  digitalWrite(SS, HIGH);
+  PORTB |= 1UL << 2; //ss high
+  PORTB &= ~(1UL << 2); //ss low
 }
 
 void atint(unsigned int i){
@@ -147,7 +144,11 @@ void atint(unsigned int i){
   else if(i==3)
     Timer1.attachInterrupt(sawwave2);
   else if(i==4)
+  {
+   Timer1.setPeriod(1/(0.000256*450));
     Timer1.attachInterrupt(noise);
+  }
+    
   else if(i==5)
   {
     Timer1.setPeriod(1/(0.000001*FREQ));
@@ -158,7 +159,7 @@ void atint(unsigned int i){
 
 
 void showInfo(){
-  delay(50);
+  
   display.clearDisplay();
     display.setCursor(0,0);
     display.print(FREQ);
@@ -186,13 +187,16 @@ void showInfo(){
      }
       
     display.display();
-    delay(50);
+
 }
 
 void setup(){
    //delay(100);
   //noInterrupts();
-  delay(100);
+   delay(100);
+   EEPROM.get(freqAd, FREQ);
+   EEPROM.get(waveAd, waveform);
+   EEPROM.get(dutyAd, dutycycle);
    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
    display.setTextColor(WHITE);
    display.setTextSize(2);
@@ -204,11 +208,14 @@ void setup(){
   pinMode(dutyup, INPUT_PULLUP);
   pinMode(dutydown, INPUT_PULLUP);
   pinMode(SS, OUTPUT);
+ // SPI.setClockDivider(SPI_CLOCK_DIV4);
   SPI.begin();
   
+ 
  //interrupts();
   Timer1.initialize(1/(0.000256*FREQ));
-  Timer1.attachInterrupt(sinewave);
+// Timer1.initialize(65);
+  atint(waveform);
  // Timer1.pwm(9, 512);
   
 
@@ -218,22 +225,30 @@ void loop(){
 
   if(!digitalRead(SET))
   {
+    Timer1.stop();
     Timer1.detachInterrupt();
-  if(!digitalRead(up) && FREQ<170)
+  while(!digitalRead(SET))
+  {
+    
+  if(!digitalRead(up))
   {
     //Timer1.detachInterrupt();
-    FREQ+=5;
+    if(FREQ<210 || waveform==5)
+      FREQ+=10;
+    EEPROM.put(freqAd, FREQ);
     showInfo();
+   // period=1/(0.000256*FREQ)
     Timer1.setPeriod(1/(0.000256*FREQ));
     delay(150);
     //Timer1.attachInterrupt(wave);
   }
 
-  if(!digitalRead(down) && FREQ>5)
+  if(!digitalRead(down) && FREQ>10)
   {
     //Timer1.detachInterrupt();
     
-    FREQ-=5;
+    FREQ-=10;
+    EEPROM.put(freqAd, FREQ);
     showInfo();
     Timer1.setPeriod(1/(0.000256*FREQ));
     delay(150);
@@ -242,10 +257,13 @@ void loop(){
 
   if(!digitalRead(selw)){
     waveform++;
+    EEPROM.put(waveAd, waveform);
     if(waveform > 5)
     {
       Timer1.setPeriod(1/(0.000256*FREQ));
       waveform=0;
+      if(FREQ>210)
+        FREQ=210;
     }
       
     showInfo();
@@ -255,16 +273,19 @@ void loop(){
   if(!digitalRead(dutydown) && dutycycle>0)
   {
     dutycycle-=10;
+    EEPROM.put(dutyAd, dutycycle);
     showInfo();
     delay(150);
   }
    if(!digitalRead(dutyup) && dutycycle<100)
   {
     dutycycle+=10;
+    EEPROM.put(dutyAd, dutycycle);
     showInfo();
     delay(150);
   }
-  
+  }
+  Timer1.start(); 
   atint(waveform);
   //Timer1.attachInterrupt(wave);
   }
